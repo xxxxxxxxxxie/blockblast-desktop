@@ -7,8 +7,19 @@ const apiKey = ""; // 系统会自动注入 API Key
 // --- 游戏配置与常量 ---
 const GRID_SIZE = 8;
 
-// --- 称赞语配置 (PRAISE_CONFIG) ---
-// 逻辑封装在这里：修改 threshold, text, style, duration
+// --- 手感参数配置 (可在此处调整) ---
+// 1. 偏移量 (Offset): 手指按下时，方块中心相对于手指触点的 Y 轴向上偏移距离 (像素)
+//    数值越大，方块离手指越远(上方)，防遮挡效果越好；数值越小，越贴手。
+const TOUCH_OFFSET_Y = 80;  // [修改] 手机端：降低偏移量，更贴手 (原100)
+const MOUSE_OFFSET_Y = 0;   // 电脑端：0 (中心对齐)
+
+// 2. 灵敏度 (Sensitivity): 非线性移动系数
+//    1.0 = 完全跟随手指速度
+//    > 1.0 = 方块移动比手指快 (适合大屏手机，手指不用划到顶端，方块就能到达顶部)
+const TOUCH_SENSITIVITY = 1.3; 
+const MOUSE_SENSITIVITY = 1.0;
+
+// --- 称赞语配置 ---
 const PRAISE_CONFIG = [
   { threshold: 0,   text: "Good",          style: "text-white font-extrabold text-3xl", duration: 800 },
   { threshold: 30,  text: "Good Job!",     style: "text-blue-300 font-black text-4xl", duration: 1000 },
@@ -108,6 +119,7 @@ const getComboStyle = (combo) => {
 };
 
 const App = () => {
+  // 游戏核心状态
   const [grid, setGrid] = useState(createEmptyGrid());
   const [availableShapes, setAvailableShapes] = useState([]);
   const [score, setScore] = useState(0);
@@ -121,22 +133,21 @@ const App = () => {
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
   
-  // --- 称赞系统状态 ---
-  const [praise, setPraise] = useState(null); // { text, style, id }
+  const [praise, setPraise] = useState(null);
 
   const clearedInRound = useRef(false);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const scoreRef = useRef(null); 
   const bottomAreaRef = useRef(null);
   
-  // 拖拽控制 Refs (用于优化手感)
+  // 拖拽控制 Refs
   const dragInfoRef = useRef({ 
     isDragging: false,
     isTouch: false, 
     startX: 0, 
     startY: 0,
-    blockStartX: 0, // 方块初始视觉中心 X
-    blockStartY: 0  // 方块初始视觉中心 Y
+    blockStartX: 0, 
+    blockStartY: 0
   });
 
   const [explosions, setExplosions] = useState([]); 
@@ -148,12 +159,6 @@ const App = () => {
   const [previewClears, setPreviewClears] = useState({ rows: [], cols: [] });
   
   const gridRef = useRef(null);
-
-  // --- 手感参数 ---
-  const TOUCH_OFFSET_Y = 140; // 手机端：方块位于手指上方 140px
-  const MOUSE_OFFSET_Y = 0;   // 电脑端：鼠标在方块中心
-  const TOUCH_SENSITIVITY = 1.3; // 手机灵敏度加倍，方便移动到顶部
-  const MOUSE_SENSITIVITY = 1.0;
 
   useEffect(() => {
     startNewGame();
@@ -235,7 +240,6 @@ const App = () => {
 
   const triggerPraise = (points) => {
     const config = [...PRAISE_CONFIG].reverse().find(p => points >= p.threshold);
-    
     if (config) {
       const id = Date.now();
       setPraise({ ...config, id });
@@ -405,7 +409,6 @@ const App = () => {
       const isTouch = e.type === 'touchstart';
       const offsetY = isTouch ? TOUCH_OFFSET_Y : MOUSE_OFFSET_Y;
       
-      // 记录拖拽初始数据
       dragInfoRef.current = {
         isDragging: true,
         isTouch,
@@ -416,12 +419,15 @@ const App = () => {
       };
 
       setDraggingShape({ ...shape, originalIndex: targetIndex });
-      // 设置初始位置为【计算出的视觉位置】，而非手指位置
       setDragPosition({ x: clientX, y: clientY - offsetY });
     }
   };
 
   const handleMouseMove = useCallback((e) => {
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
     if (!draggingShape) return;
     
     const touch = e.touches ? e.touches[0] : e;
@@ -430,7 +436,6 @@ const App = () => {
     
     const { startX, startY, blockStartX, blockStartY, isTouch } = dragInfoRef.current;
     
-    // 计算移动增量并应用灵敏度
     const deltaX = currentX - startX;
     const deltaY = currentY - startY;
     const sensitivity = isTouch ? TOUCH_SENSITIVITY : MOUSE_SENSITIVITY;
@@ -444,8 +449,6 @@ const App = () => {
       const gridRect = gridRef.current.getBoundingClientRect();
       const cellSize = gridRect.width / GRID_SIZE;
       
-      // 修复点：直接使用 newBlockY (方块视觉中心) 作为计算基准
-      // 之前的逻辑里可能混淆了 visualOffsetY，导致判定位置上偏
       const centerX = newBlockX;
       const centerY = newBlockY; 
       
@@ -503,8 +506,6 @@ const App = () => {
 
   const handleMouseUp = useCallback((e) => {
     if (!draggingShape) return;
-    
-    // 使用 dragPosition (方块中心) 
     let dropRect = { left: dragPosition.x - 20, top: dragPosition.y - 20, width: 40, height: 40 };
 
     if (previewPlacement) {
@@ -629,83 +630,33 @@ const App = () => {
   const comboStyle = getComboStyle(combo);
 
   return (
-    <div className="h-screen bg-slate-950 text-white flex flex-col items-center justify-between font-sans overflow-hidden select-none touch-none relative">
+    // [修改] 强制全屏，无滚动，修复移动端白条
+    <div className="fixed inset-0 w-full h-full bg-slate-950 text-white flex flex-col items-center justify-between font-sans overflow-hidden select-none touch-none relative">
       
       <style>{`
-        @keyframes pop-out {
-          0% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.4); opacity: 0.8; box-shadow: 0 0 20px currentColor; }
-          100% { transform: scale(0); opacity: 0; }
-        }
-        @keyframes juicy-fly {
-          0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
-          20% { transform: translate(-50%, -50%) scale(1.8) rotate(calc(-15deg * var(--dir))); opacity: 1; }
-          40% { transform: translate(-50%, -50%) scale(1.2) rotate(calc(10deg * var(--dir))); opacity: 1; }
-          50% { transform: translate(-50%, -50%) scale(1.2) rotate(0deg); opacity: 1; }
-          100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
-        }
-        @keyframes pulse-gold {
-          0% { transform: scale(1); opacity: 0; }
-          50% { transform: scale(1.2); opacity: 1; }
-          100% { transform: scale(1.5); opacity: 0; }
-        }
-        @keyframes shake-vertical {
-          0%, 100% { transform: translateY(0); }
-          25% { transform: translateY(-3px); }
-          75% { transform: translateY(3px); }
-        }
-        @keyframes fade-scale-in {
-            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
-            100% { opacity: 0; transform: translate(-50%, -100%) scale(1); }
-        }
-        @keyframes bounce-short {
-            0%, 100% { transform: translate(-50%, -50%); }
-            50% { transform: translate(-50%, -60%); }
-        }
-        @keyframes shake {
-            0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
-            25% { transform: translate(-52%, -48%) rotate(-5deg); }
-            75% { transform: translate(-48%, -52%) rotate(5deg); }
-        }
-        @keyframes praise-pop {
-           0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-           20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
-           80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-           100% { opacity: 0; transform: translate(-50%, -100%) scale(1.2); }
-        }
+        /* 强制重置与防滚动 */
+        html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #020617; overflow: hidden; overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; }
+
+        @keyframes pop-out { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.8; box-shadow: 0 0 20px currentColor; } 100% { transform: scale(0); opacity: 0; } }
+        @keyframes juicy-fly { 0% { transform: translate(-50%, -50%) scale(0); opacity: 0; } 20% { transform: translate(-50%, -50%) scale(1.8) rotate(calc(-15deg * var(--dir))); opacity: 1; } 40% { transform: translate(-50%, -50%) scale(1.2) rotate(calc(10deg * var(--dir))); opacity: 1; } 50% { transform: translate(-50%, -50%) scale(1.2) rotate(0deg); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; } }
+        @keyframes pulse-gold { 0% { transform: scale(1); opacity: 0; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+        @keyframes shake-vertical { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-3px); } 75% { transform: translateY(3px); } }
+        @keyframes praise-pop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); } 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -100%) scale(1.2); } }
         
         .animate-pop { animation: pop-out 0.4s ease-out forwards; }
         .animate-fly { animation: juicy-fly 1s ease-in-out forwards; }
-        .animate-bounce-short { animation: bounce-short 0.5s infinite; }
-        .animate-shake { animation: shake 0.4s infinite; }
         .animate-praise { animation: praise-pop var(--duration, 1s) ease-out forwards; }
 
         .score-stroke { -webkit-text-stroke: 2px #000; paint-order: stroke fill; }
         .score-shadow { filter: drop-shadow(0 4px 0px rgba(0,0,0,0.5)); }
 
-        .best-gold-text {
-          background: linear-gradient(to bottom, #fcd34d, #d97706);
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
-          filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
-        }
-
-        .flying-score-effect {
-            text-shadow: 0 0 8px currentColor;
-        }
-        
+        .best-gold-text { background: linear-gradient(to bottom, #fcd34d, #d97706); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
+        .flying-score-effect { text-shadow: 0 0 8px currentColor; }
         .flame-text { text-shadow: 0 0 10px #ff5500, 0 0 20px #ff0000; }
         .flame-purple { text-shadow: 0 0 10px #aa00ff, 0 0 20px #ff00ff; }
         .flame-blue { text-shadow: 0 0 10px #00aaff, 0 0 20px #00ffff; }
         .flame-gold { text-shadow: 0 0 10px #ffaa00, 0 0 20px #ffff00; }
-        .gold-metal-text {
-            background: linear-gradient(to bottom, #fbf5b7 0%, #bf953f 30%, #b38728 50%, #fbf5b7 80%, #aa771c 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
+        .gold-metal-text { background: linear-gradient(to bottom, #fbf5b7 0%, #bf953f 30%, #b38728 50%, #fbf5b7 80%, #aa771c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
       `}</style>
 
       {/* Top Spacer Removed, pt-12 added */}
@@ -758,7 +709,6 @@ const App = () => {
 
           {/* 游戏主棋盘 */}
           <div className="w-[90vw] max-w-[500px] max-h-[55vh] aspect-square flex justify-center items-center shrink-0 relative">
-             {/* 称赞语弹出层 (Praise Overlay) */}
              {praise && (
                 <div 
                    className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none whitespace-nowrap animate-praise ${praise.style}`}
