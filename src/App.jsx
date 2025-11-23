@@ -7,7 +7,23 @@ const apiKey = ""; // 系统会自动注入 API Key
 // --- 游戏配置与常量 ---
 const GRID_SIZE = 8;
 
-// 默认颜色 (Tailwind Classes)
+// --- 称赞语配置 (PRAISE_CONFIG) ---
+// 逻辑封装在这里：修改 threshold, text, style, duration
+const PRAISE_CONFIG = [
+  { threshold: 0,   text: "Good",          style: "text-white font-extrabold text-3xl", duration: 800 },
+  { threshold: 30,  text: "Good Job!",     style: "text-blue-300 font-black text-4xl", duration: 1000 },
+  { threshold: 50,  text: "Great Clear!",  style: "text-green-300 font-black text-4xl drop-shadow-md", duration: 1200 },
+  { threshold: 80,  text: "Excellent!",    style: "text-yellow-300 font-black text-5xl", duration: 1500 },
+  { threshold: 120, text: "Fantastic!",    style: "text-orange-400 font-black text-5xl score-stroke", duration: 1800 },
+  { threshold: 180, text: "Perfect Hit!",  style: "text-pink-400 font-black text-6xl score-stroke drop-shadow-lg", duration: 2000 },
+  { threshold: 250, text: "Superb!",       style: "text-purple-400 font-black text-6xl score-stroke flame-text", duration: 2200 },
+  { threshold: 350, text: "Unbelievable!", style: "text-fuchsia-500 font-black text-7xl score-stroke flame-purple", duration: 2500 },
+  { threshold: 500, text: "World Class!",  style: "text-cyan-400 font-black text-7xl score-stroke flame-blue", duration: 2800 },
+  { threshold: 700, text: "Godlike!",      style: "text-rose-500 font-black text-8xl score-stroke flame-gold", duration: 3000 },
+  { threshold: 1000,text: "Legendary!",    style: "gold-metal-text font-black text-8xl score-stroke filter drop-shadow-xl", duration: 4000 },
+];
+
+// 默认颜色
 const DEFAULT_COLORS = {
   blue:   'bg-blue-500 border-blue-600',
   green:  'bg-green-500 border-green-600',
@@ -19,7 +35,6 @@ const DEFAULT_COLORS = {
   pink:   'bg-pink-500 border-pink-600',
 };
 
-// 霓虹特效颜色池
 const EFFECT_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899',
 ];
@@ -28,7 +43,7 @@ const EFFECT_COLORS = [
 const SHAPES = [
   { id: '1x1', matrix: [[1]], color: 'blue' },
   { id: '2x1', matrix: [[1, 1]], color: 'green' },
-  { id: '1x2', matrix: [[1]], color: 'green' },
+  { id: '1x2', matrix: [[1], [1]], color: 'green' },
   { id: '3x1', matrix: [[1, 1, 1]], color: 'orange' },
   { id: '1x3', matrix: [[1], [1], [1]], color: 'orange' },
   { id: '4x1', matrix: [[1, 1, 1, 1]], color: 'cyan' },
@@ -93,7 +108,6 @@ const getComboStyle = (combo) => {
 };
 
 const App = () => {
-  // 游戏核心状态
   const [grid, setGrid] = useState(createEmptyGrid());
   const [availableShapes, setAvailableShapes] = useState([]);
   const [score, setScore] = useState(0);
@@ -107,19 +121,27 @@ const App = () => {
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
   
-  const clearedInRound = useRef(false);
+  // --- 称赞系统状态 ---
+  const [praise, setPraise] = useState(null); // { text, style, id }
 
-  // UI 状态
+  const clearedInRound = useRef(false);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const scoreRef = useRef(null); 
   const bottomAreaRef = useRef(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  
+  // 拖拽控制 Refs (用于优化手感)
+  const dragInfoRef = useRef({ 
+    isDragging: false,
+    isTouch: false, 
+    startX: 0, 
+    startY: 0,
+    blockStartX: 0, // 方块初始视觉中心 X
+    blockStartY: 0  // 方块初始视觉中心 Y
+  });
 
-  // 动画状态
   const [explosions, setExplosions] = useState([]); 
   const [flyingScores, setFlyingScores] = useState([]); 
 
-  // 拖拽状态
   const [draggingShape, setDraggingShape] = useState(null); 
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [previewPlacement, setPreviewPlacement] = useState(null);
@@ -127,7 +149,12 @@ const App = () => {
   
   const gridRef = useRef(null);
 
-  // --- 初始化 ---
+  // --- 手感参数 ---
+  const TOUCH_OFFSET_Y = 140; // 手机端：方块位于手指上方 140px
+  const MOUSE_OFFSET_Y = 0;   // 电脑端：鼠标在方块中心
+  const TOUCH_SENSITIVITY = 1.3; // 手机灵敏度加倍，方便移动到顶部
+  const MOUSE_SENSITIVITY = 1.0;
+
   useEffect(() => {
     startNewGame();
     const savedBest = localStorage.getItem('blockBlastBestScore');
@@ -154,7 +181,6 @@ const App = () => {
     if (combo > maxCombo) setMaxCombo(combo);
   }, [combo]);
 
-  // 分数滚动动画
   useEffect(() => {
     if (displayScore === score) return;
     const diff = score - displayScore;
@@ -168,7 +194,6 @@ const App = () => {
     return () => cancelAnimationFrame(timer);
   }, [score, displayScore]);
 
-  // --- Game Over 判定逻辑 ---
   useEffect(() => {
       if (gameOver) return;
       const activeShapes = availableShapes.filter(s => s !== null);
@@ -194,6 +219,7 @@ const App = () => {
     setShowRestartModal(false);
     setHasBrokenRecord(false);
     setShowNewRecordAnim(false);
+    setPraise(null);
     const currentSaved = parseInt(localStorage.getItem('blockBlastBestScore') || '0');
     setInitialBestScore(isNaN(currentSaved) ? 0 : currentSaved); 
     
@@ -207,7 +233,18 @@ const App = () => {
     clearedInRound.current = false; 
   };
 
-  // --- 特效逻辑 ---
+  const triggerPraise = (points) => {
+    const config = [...PRAISE_CONFIG].reverse().find(p => points >= p.threshold);
+    
+    if (config) {
+      const id = Date.now();
+      setPraise({ ...config, id });
+      setTimeout(() => {
+        setPraise(prev => (prev && prev.id === id ? null : prev));
+      }, config.duration);
+    }
+  };
+
   const addFlyingScore = (points, startRect, isCombo) => {
     if (!startRect || !scoreRef.current) return;
     
@@ -238,7 +275,6 @@ const App = () => {
 
   const getBlockClass = (colorName) => DEFAULT_COLORS[colorName] || 'bg-slate-700';
 
-  // --- 游戏逻辑 ---
   const canPlaceShape = (currentGrid, shapeMatrix, startR, startC) => {
     const rows = shapeMatrix.length;
     const cols = shapeMatrix[0].length;
@@ -286,6 +322,7 @@ const App = () => {
     linesCleared = rowsToClear.size + colsToClear.size;
     
     let finalGrid = newGrid;
+    let pointsGained = 0;
 
     if (linesCleared > 0) {
       const cellsToExplode = new Set();
@@ -309,11 +346,11 @@ const App = () => {
       clearedInRound.current = true; 
 
       const basePoints = linesCleared * 10; 
-      const totalPoints = basePoints * newCombo;
+      pointsGained = basePoints * newCombo; 
       
-      if (triggerRect) addFlyingScore(totalPoints, triggerRect, newCombo > 1);
+      if (triggerRect) addFlyingScore(pointsGained, triggerRect, newCombo > 1);
 
-      setScore(prev => prev + totalPoints);
+      setScore(prev => prev + pointsGained);
 
       const clearedGrid = newGrid.map(row => [...row]);
       rowsToClear.forEach(r => { for (let c = 0; c < GRID_SIZE; c++) clearedGrid[r][c] = null; });
@@ -326,17 +363,15 @@ const App = () => {
     }
     setPreviewClears({ rows: [], cols: [] });
     
-    return { linesCleared: linesCleared > 0, finalGrid };
+    return { linesCleared: linesCleared > 0, finalGrid, pointsGained };
   };
 
-  // --- 交互处理 ---
   const getSmartTargetIndex = (clickXRatio) => {
     const s0 = availableShapes[0]; 
     const s1 = availableShapes[1]; 
     const s2 = availableShapes[2]; 
     
     const activeIndices = [0, 1, 2].filter(i => availableShapes[i]);
-    
     if (activeIndices.length === 1) return activeIndices[0];
     
     let targetIndex = -1;
@@ -344,17 +379,9 @@ const App = () => {
     else if (clickXRatio < 0.66) targetIndex = 1;
     else targetIndex = 2;
 
-    if (targetIndex === 0 && !s0) {
-       if (s1) return 1; 
-       return 2; 
-    }
-    if (targetIndex === 2 && !s2) {
-       if (s1) return 1; 
-       return 0; 
-    }
-    if (targetIndex === 1 && !s1) {
-        return clickXRatio < 0.5 ? 0 : 2;
-    }
+    if (targetIndex === 0 && !s0) return s1 ? 1 : 2;
+    if (targetIndex === 2 && !s2) return s1 ? 1 : 0;
+    if (targetIndex === 1 && !s1) return clickXRatio < 0.5 ? 0 : 2;
 
     return targetIndex;
   };
@@ -363,43 +390,74 @@ const App = () => {
     e.preventDefault(); 
     if (gameOver) return;
 
-    const touch = e.touches ? e.touches[0] : e;
+    const touch = e.touches ? e.touches[0] : e; 
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+    
     const rect = bottomAreaRef.current.getBoundingClientRect();
     
-    const clickXRatio = (touch.clientX - rect.left) / rect.width;
+    const clickXRatio = (clientX - rect.left) / rect.width;
     const targetIndex = getSmartTargetIndex(clickXRatio);
     
     if (targetIndex !== -1 && availableShapes[targetIndex]) {
       const shape = availableShapes[targetIndex];
-      dragOffset.current = { x: 0, y: 0 }; 
+      
+      const isTouch = e.type === 'touchstart';
+      const offsetY = isTouch ? TOUCH_OFFSET_Y : MOUSE_OFFSET_Y;
+      
+      // 记录拖拽初始数据
+      dragInfoRef.current = {
+        isDragging: true,
+        isTouch,
+        startX: clientX,
+        startY: clientY,
+        blockStartX: clientX,
+        blockStartY: clientY - offsetY 
+      };
+
       setDraggingShape({ ...shape, originalIndex: targetIndex });
-      setDragPosition({ x: touch.clientX, y: touch.clientY });
+      // 设置初始位置为【计算出的视觉位置】，而非手指位置
+      setDragPosition({ x: clientX, y: clientY - offsetY });
     }
   };
 
   const handleMouseMove = useCallback((e) => {
     if (!draggingShape) return;
+    
     const touch = e.touches ? e.touches[0] : e;
-    const mouseX = touch.clientX;
-    const mouseY = touch.clientY;
-    setDragPosition({ x: mouseX, y: mouseY });
+    const currentX = touch.clientX;
+    const currentY = touch.clientY;
+    
+    const { startX, startY, blockStartX, blockStartY, isTouch } = dragInfoRef.current;
+    
+    // 计算移动增量并应用灵敏度
+    const deltaX = currentX - startX;
+    const deltaY = currentY - startY;
+    const sensitivity = isTouch ? TOUCH_SENSITIVITY : MOUSE_SENSITIVITY;
+    
+    const newBlockX = blockStartX + deltaX * sensitivity;
+    const newBlockY = blockStartY + deltaY * sensitivity;
+
+    setDragPosition({ x: newBlockX, y: newBlockY });
 
     if (gridRef.current) {
       const gridRect = gridRef.current.getBoundingClientRect();
       const cellSize = gridRect.width / GRID_SIZE;
-      const visualOffsetY = 60;
-      const relativeX = mouseX - gridRect.left;
-      const relativeY = (mouseY - visualOffsetY) - gridRect.top;
+      
+      // 修复点：直接使用 newBlockY (方块视觉中心) 作为计算基准
+      // 之前的逻辑里可能混淆了 visualOffsetY，导致判定位置上偏
+      const centerX = newBlockX;
+      const centerY = newBlockY; 
+      
+      const relativeX = centerX - gridRect.left;
+      const relativeY = centerY - gridRect.top;
       
       const rawCol = Math.round((relativeX / cellSize) - (draggingShape.matrix[0].length / 2));
       const rawRow = Math.round((relativeY / cellSize) - (draggingShape.matrix.length / 2));
 
       let bestCandidate = null;
       let minDistance = Infinity;
-      const searchOffsets = [
-          [0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], 
-          [1, 1], [1, -1], [-1, 1], [-1, -1]
-      ];
+      const searchOffsets = [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
       for (const [rOff, cOff] of searchOffsets) {
           const r = rawRow + rOff;
@@ -445,11 +503,9 @@ const App = () => {
 
   const handleMouseUp = useCallback((e) => {
     if (!draggingShape) return;
-    let dropRect = {
-      left: dragPosition.x - 20, 
-      top: dragPosition.y - 80, 
-      width: 40, height: 40
-    };
+    
+    // 使用 dragPosition (方块中心) 
+    let dropRect = { left: dragPosition.x - 20, top: dragPosition.y - 20, width: 40, height: 40 };
 
     if (previewPlacement) {
       const newGrid = grid.map(row => [...row]);
@@ -469,7 +525,11 @@ const App = () => {
       
       setScore(s => s + cellsPlaced);
       
-      const { finalGrid } = clearLines(newGrid, dropRect);
+      const { finalGrid, pointsGained } = clearLines(newGrid, dropRect);
+      
+      if (pointsGained > 0) {
+         triggerPraise(pointsGained);
+      }
       
       const remainingShapes = newAvailableShapes.filter(s => s !== null);
       
@@ -486,6 +546,7 @@ const App = () => {
     setPreviewPlacement(null);
     setPreviewClears({ rows: [], cols: [] });
     setDragPosition({ x: 0, y: 0 });
+    dragInfoRef.current.isDragging = false;
   }, [draggingShape, previewPlacement, grid, availableShapes, dragPosition, combo]); 
 
   useEffect(() => {
@@ -502,7 +563,6 @@ const App = () => {
   }, [handleMouseMove, handleMouseUp]);
 
 
-  // --- 渲染 ---
   const renderCell = (color, r, c) => {
     let isPreview = false;
     if (previewPlacement && draggingShape) {
@@ -523,15 +583,9 @@ const App = () => {
             ${color ? 'shadow-sm' : ''}
           `}
         />
-        
-        {isWillClear && (
-           <div className="absolute inset-0 bg-white/40 z-20 animate-pulse rounded-md box-content border-2 border-white/50" />
-        )}
-
+        {isWillClear && <div className="absolute inset-0 bg-white/40 z-20 animate-pulse rounded-md box-content border-2 border-white/50" />}
         {explosion && (
-          <div 
-            className={`absolute inset-0 rounded-md z-10 animate-pop ${getBlockClass(explosion.color)}`}
-          >
+          <div className={`absolute inset-0 rounded-md z-10 animate-pop ${getBlockClass(explosion.color)}`}>
              <div className="absolute inset-0 bg-white animate-particle opacity-0"></div>
           </div>
         )}
@@ -541,7 +595,6 @@ const App = () => {
 
   const renderShape = (shape, index) => {
     if (!shape) return <div className="relative flex-1 h-full min-w-0 p-4 opacity-0 pointer-events-none" key={`empty-${index}`} />;
-    
     const isBeingDragged = draggingShape && draggingShape.originalIndex === index;
     const rows = shape.matrix.length;
     const cols = shape.matrix[0].length;
@@ -601,9 +654,33 @@ const App = () => {
           25% { transform: translateY(-3px); }
           75% { transform: translateY(3px); }
         }
+        @keyframes fade-scale-in {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+            100% { opacity: 0; transform: translate(-50%, -100%) scale(1); }
+        }
+        @keyframes bounce-short {
+            0%, 100% { transform: translate(-50%, -50%); }
+            50% { transform: translate(-50%, -60%); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
+            25% { transform: translate(-52%, -48%) rotate(-5deg); }
+            75% { transform: translate(-48%, -52%) rotate(5deg); }
+        }
+        @keyframes praise-pop {
+           0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+           20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+           80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+           100% { opacity: 0; transform: translate(-50%, -100%) scale(1.2); }
+        }
         
         .animate-pop { animation: pop-out 0.4s ease-out forwards; }
         .animate-fly { animation: juicy-fly 1s ease-in-out forwards; }
+        .animate-bounce-short { animation: bounce-short 0.5s infinite; }
+        .animate-shake { animation: shake 0.4s infinite; }
+        .animate-praise { animation: praise-pop var(--duration, 1s) ease-out forwards; }
+
         .score-stroke { -webkit-text-stroke: 2px #000; paint-order: stroke fill; }
         .score-shadow { filter: drop-shadow(0 4px 0px rgba(0,0,0,0.5)); }
 
@@ -615,24 +692,32 @@ const App = () => {
           filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
         }
 
-        /* 恢复随机颜色发光效果 (内联样式控制颜色，这里只保留动画类) */
         .flying-score-effect {
             text-shadow: 0 0 8px currentColor;
+        }
+        
+        .flame-text { text-shadow: 0 0 10px #ff5500, 0 0 20px #ff0000; }
+        .flame-purple { text-shadow: 0 0 10px #aa00ff, 0 0 20px #ff00ff; }
+        .flame-blue { text-shadow: 0 0 10px #00aaff, 0 0 20px #00ffff; }
+        .flame-gold { text-shadow: 0 0 10px #ffaa00, 0 0 20px #ffff00; }
+        .gold-metal-text {
+            background: linear-gradient(to bottom, #fbf5b7 0%, #bf953f 30%, #b38728 50%, #fbf5b7 80%, #aa771c 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
       `}</style>
 
       {/* Top Spacer Removed, pt-12 added */}
-      {/* Main Content Group: Top UI + Board */}
       <div className="flex flex-col items-center justify-start shrink-0 z-10 w-full pt-12">
 
-          {/* 顶部 UI：紧贴棋盘上方 (mb-2) */}
+          {/* 顶部 UI */}
           <div className="w-full max-w-[500px] px-6 grid grid-cols-3 items-end mb-2 shrink-0 pt-4">
             
             <div className="flex flex-col gap-3 justify-self-start">
               <button onClick={() => setShowRestartModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5">
                 <RotateCcw size={18} />
               </button>
-              {/* 扁平化金色 Best UI */}
               <div className="text-xs font-black flex items-center gap-1.5">
                 <Crown size={14} className="text-yellow-500" fill="currentColor" /> 
                 <span className="best-gold-text text-sm">BEST {bestScore}</span>
@@ -647,7 +732,6 @@ const App = () => {
             </div>
 
             <div className="flex flex-col items-end justify-self-end h-full justify-end pb-1">
-              {/* 炫酷光效 Combo UI */}
               <div 
                 className={`text-xl md:text-2xl font-black italic tracking-tighter flex items-center gap-1 transition-all duration-500 ${comboStyle.containerClass} ${comboStyle.colorClass}`}
                 style={{ ...comboStyle.scaleStyle, ...comboStyle.animationStyle, ...comboStyle.glowStyle }}
@@ -672,9 +756,19 @@ const App = () => {
 
           </div>
 
-          {/* 游戏主棋盘：最大宽度增加到 500px，宽度 90vw */}
-          <div className="w-[90vw] max-w-[500px] flex justify-center shrink-0">
-            <div className="relative p-1 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 aspect-square w-full">
+          {/* 游戏主棋盘 */}
+          <div className="w-[90vw] max-w-[500px] max-h-[55vh] aspect-square flex justify-center items-center shrink-0 relative">
+             {/* 称赞语弹出层 (Praise Overlay) */}
+             {praise && (
+                <div 
+                   className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none whitespace-nowrap animate-praise ${praise.style}`}
+                   style={{ '--duration': `${praise.duration}ms` }}
+                >
+                    {praise.text}
+                </div>
+             )}
+
+            <div className="relative w-full h-full p-1 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700">
                 <div ref={gridRef} className="w-full h-full grid grid-rows-8 grid-cols-8 gap-1 p-3">
                     {grid.map((row, r) => row.map((color, c) => renderCell(color, r, c)))}
                 </div>
@@ -704,7 +798,6 @@ const App = () => {
       
       </div>
 
-      {/* 3. 底部弹性触控区：紧贴棋盘下方 (pt-2)，判定范围填满剩余空间 (flex-1) */}
       <div 
         ref={bottomAreaRef}
         className="w-full max-w-[500px] flex-1 min-h-[100px] px-2 flex justify-between items-start pt-2 z-20 gap-0 cursor-grab active:cursor-grabbing touch-none shrink-0 bg-gradient-to-t from-slate-950/50 to-transparent"
@@ -714,9 +807,8 @@ const App = () => {
         {availableShapes.map((shape, i) => renderShape(shape, i))}
       </div>
 
-      {/* 拖拽 Ghost */}
       {draggingShape && (
-        <div className="fixed pointer-events-none z-50 opacity-90" style={{ left: dragPosition.x, top: dragPosition.y - 60, transform: 'translate(-50%, -50%) scale(1.2)' }}>
+        <div className="fixed pointer-events-none z-50 opacity-90" style={{ left: dragPosition.x, top: dragPosition.y, transform: 'translate(-50%, -50%) scale(1.2)' }}>
            <div style={{ display: 'grid', gridTemplateRows: `repeat(${draggingShape.matrix.length}, 1fr)`, gridTemplateColumns: `repeat(${draggingShape.matrix[0].length}, 1fr)`, gap: '2px' }}>
             {draggingShape.matrix.map((row, r) => row.map((val, c) => (
                 <div key={`drag-${r}-${c}`} className={`w-10 h-10 md:w-12 md:h-12 rounded-md ${val ? getBlockClass(draggingShape.color) : 'opacity-0'}`}/>
@@ -725,7 +817,6 @@ const App = () => {
         </div>
       )}
 
-      {/* 飞行分数层 - 恢复随机颜色 */}
       {flyingScores.map(fs => (
         <div
           key={fs.id}
@@ -733,7 +824,8 @@ const App = () => {
           style={{
             left: fs.x,
             top: fs.y,
-            color: fs.color, // 随机颜色
+            color: fs.color, 
+            textShadow: `0 0 8px ${fs.color}`, 
             '--tx': `${fs.moveX}px`,
             '--ty': `${fs.moveY}px`,
             '--dir': fs.rotationDir,
@@ -744,7 +836,6 @@ const App = () => {
         </div>
       ))}
 
-      {/* Restart Modal */}
       {showRestartModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-xs w-full text-center shadow-2xl">
