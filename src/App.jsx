@@ -7,15 +7,9 @@ const apiKey = ""; // 系统会自动注入 API Key
 // --- 游戏配置与常量 ---
 const GRID_SIZE = 8;
 
-// --- 手感参数配置 (可在此处调整) ---
-// 1. 偏移量 (Offset): 手指按下时，方块中心相对于手指触点的 Y 轴向上偏移距离 (像素)
-//    数值越大，方块离手指越远(上方)，防遮挡效果越好；数值越小，越贴手。
-const TOUCH_OFFSET_Y = 80;  // [修改] 手机端：降低偏移量，更贴手 (原100)
-const MOUSE_OFFSET_Y = 0;   // 电脑端：0 (中心对齐)
-
-// 2. 灵敏度 (Sensitivity): 非线性移动系数
-//    1.0 = 完全跟随手指速度
-//    > 1.0 = 方块移动比手指快 (适合大屏手机，手指不用划到顶端，方块就能到达顶部)
+// --- 手感参数配置 ---
+const TOUCH_OFFSET_Y = 80;  
+const MOUSE_OFFSET_Y = 0;   
 const TOUCH_SENSITIVITY = 1.3; 
 const MOUSE_SENSITIVITY = 1.0;
 
@@ -54,7 +48,7 @@ const EFFECT_COLORS = [
 const SHAPES = [
   { id: '1x1', matrix: [[1]], color: 'blue' },
   { id: '2x1', matrix: [[1, 1]], color: 'green' },
-  { id: '1x2', matrix: [[1], [1]], color: 'green' },
+  { id: '1x2', matrix: [[1]], color: 'green' },
   { id: '3x1', matrix: [[1, 1, 1]], color: 'orange' },
   { id: '1x3', matrix: [[1], [1], [1]], color: 'orange' },
   { id: '4x1', matrix: [[1, 1, 1, 1]], color: 'cyan' },
@@ -140,7 +134,6 @@ const App = () => {
   const scoreRef = useRef(null); 
   const bottomAreaRef = useRef(null);
   
-  // 拖拽控制 Refs
   const dragInfoRef = useRef({ 
     isDragging: false,
     isTouch: false, 
@@ -159,7 +152,48 @@ const App = () => {
   const [previewClears, setPreviewClears] = useState({ rows: [], cols: [] });
   
   const gridRef = useRef(null);
+  
+  // --- 布局自适应状态 ---
+  const [boardSize, setBoardSize] = useState(320);
+  const [isCompact, setIsCompact] = useState(false);
 
+  // AI 分析状态
+  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // --- 布局计算 Effect ---
+  useEffect(() => {
+    const calculateLayout = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      
+      // 预留给顶部 UI 和底部方块的高度
+      // 顶部约 120px (含 padding), 底部约 140px
+      const verticalReserved = 260; 
+      const horizontalPadding = 32; // px-4 * 2
+
+      const maxBoardHeight = h - verticalReserved;
+      const maxBoardWidth = w - horizontalPadding;
+      
+      // 棋盘是正方形，取宽高的较小值
+      let size = Math.min(maxBoardHeight, maxBoardWidth);
+      
+      // 限制最大尺寸，避免在大屏上过大
+      size = Math.min(size, 500);
+      
+      // 限制最小尺寸，避免不可玩 (虽然正常手机不会小于 280)
+      size = Math.max(size, 280);
+      
+      setBoardSize(size);
+      setIsCompact(h < 667); // iPhone SE 等小屏判定
+    };
+
+    calculateLayout();
+    window.addEventListener('resize', calculateLayout);
+    return () => window.removeEventListener('resize', calculateLayout);
+  }, []);
+
+  // --- 初始化 ---
   useEffect(() => {
     startNewGame();
     const savedBest = localStorage.getItem('blockBlastBestScore');
@@ -219,6 +253,7 @@ const App = () => {
     setCombo(0);
     setMaxCombo(0);
     setGameOver(false);
+    setAiAnalysis('');
     setExplosions([]);
     setFlyingScores([]);
     setShowRestartModal(false);
@@ -275,6 +310,32 @@ const App = () => {
     setTimeout(() => {
       setFlyingScores(prev => prev.filter(fs => fs.id !== id));
     }, 1200);
+  };
+
+  const analyzeGame = async () => {
+    setIsAnalyzing(true);
+    try {
+      const prompt = `
+        The player just finished a game of Block Blast.
+        Stats: Score: ${score}, Best Score: ${bestScore}, Max Combo: ${maxCombo}.
+        Give a short, witty, 2-sentence reaction.
+      `;
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) setAiAnalysis(text);
+      else throw new Error("Invalid response");
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      setAiAnalysis("The AI is currently speechless. Great job anyway!");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const getBlockClass = (colorName) => DEFAULT_COLORS[colorName] || 'bg-slate-700';
@@ -630,11 +691,9 @@ const App = () => {
   const comboStyle = getComboStyle(combo);
 
   return (
-    // [修改] 强制全屏，无滚动，修复移动端白条
     <div className="fixed inset-0 w-full h-full bg-slate-950 text-white flex flex-col items-center justify-between font-sans overflow-hidden select-none touch-none relative">
       
       <style>{`
-        /* 强制重置与防滚动 */
         html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #020617; overflow: hidden; overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; }
 
         @keyframes pop-out { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.8; box-shadow: 0 0 20px currentColor; } 100% { transform: scale(0); opacity: 0; } }
@@ -659,11 +718,14 @@ const App = () => {
         .gold-metal-text { background: linear-gradient(to bottom, #fbf5b7 0%, #bf953f 30%, #b38728 50%, #fbf5b7 80%, #aa771c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
       `}</style>
 
-      {/* Top Spacer Removed, pt-12 added */}
-      <div className="flex flex-col items-center justify-start shrink-0 z-10 w-full pt-12">
+      {/* 顶部留白 - 适配异形屏 */}
+      <div className="w-full h-12 shrink-0" />
+
+      {/* 核心内容区 - 垂直排列 */}
+      <div className="flex flex-col items-center justify-start shrink-0 z-10 w-full flex-1">
 
           {/* 顶部 UI */}
-          <div className="w-full max-w-[500px] px-6 grid grid-cols-3 items-end mb-2 shrink-0 pt-4">
+          <div className="w-full max-w-[500px] px-6 grid grid-cols-3 items-end mb-2 shrink-0">
             
             <div className="flex flex-col gap-3 justify-self-start">
               <button onClick={() => setShowRestartModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5">
@@ -707,18 +769,22 @@ const App = () => {
 
           </div>
 
-          {/* 游戏主棋盘 */}
-          <div className="w-[90vw] max-w-[500px] max-h-[55vh] aspect-square flex justify-center items-center shrink-0 relative">
-             {praise && (
-                <div 
-                   className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none whitespace-nowrap animate-praise ${praise.style}`}
-                   style={{ '--duration': `${praise.duration}ms` }}
-                >
-                    {praise.text}
-                </div>
-             )}
+          {/* 游戏主棋盘 - 动态调整大小 */}
+          <div 
+            className="flex justify-center items-center shrink-0 transition-all duration-300"
+            style={{ width: boardSize, height: boardSize }}
+          >
+             <div className="relative w-full h-full p-1 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 relative">
+                {/* 称赞语弹出层 */}
+                {praise && (
+                    <div 
+                      className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none whitespace-nowrap animate-praise ${praise.style}`}
+                      style={{ '--duration': `${praise.duration}ms` }}
+                    >
+                        {praise.text}
+                    </div>
+                )}
 
-            <div className="relative w-full h-full p-1 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700">
                 <div ref={gridRef} className="w-full h-full grid grid-rows-8 grid-cols-8 gap-1 p-3">
                     {grid.map((row, r) => row.map((color, c) => renderCell(color, r, c)))}
                 </div>
@@ -738,6 +804,7 @@ const App = () => {
                   <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center rounded-2xl z-20 animate-in fade-in duration-300 p-6 text-center">
                     <div className="text-4xl font-bold mb-2 text-white">Game Over!</div>
                     <div className="text-slate-300 mb-6 text-xl">Score: {score}</div>
+                    {/* AI 分析 UI 已移除 */}
                     <button onClick={startNewGame} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg mt-8">
                       <RefreshCw size={20} /> Try Again
                     </button>
@@ -748,6 +815,7 @@ const App = () => {
       
       </div>
 
+      {/* 底部弹性触控区 - 填满下方剩余空间 */}
       <div 
         ref={bottomAreaRef}
         className="w-full max-w-[500px] flex-1 min-h-[100px] px-2 flex justify-between items-start pt-2 z-20 gap-0 cursor-grab active:cursor-grabbing touch-none shrink-0 bg-gradient-to-t from-slate-950/50 to-transparent"
