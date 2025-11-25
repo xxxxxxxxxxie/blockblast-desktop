@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Trophy, RotateCcw, Crown, Flame, Sparkles, Loader2 } from 'lucide-react';
+import StartScreen from './components/StartScreen.jsx';
+import { useUIConfig } from './lib/uiConfig.js';
 
 // --- API 配置 ---
 const apiKey = ""; // 系统会自动注入 API Key
@@ -160,32 +162,30 @@ const App = () => {
   // AI 分析状态
   const [aiAnalysis, setAiAnalysis] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const uiConfig = useUIConfig();
 
   // --- 布局计算 Effect ---
   useEffect(() => {
     const calculateLayout = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      
-      // 预留给顶部 UI 和底部方块的高度
-      // 顶部约 120px (含 padding), 底部约 140px
-      const verticalReserved = 260; 
-      const horizontalPadding = 32; // px-4 * 2
 
-      const maxBoardHeight = h - verticalReserved;
-      const maxBoardWidth = w - horizontalPadding;
-      
-      // 棋盘是正方形，取宽高的较小值
+      const vReserved = uiConfig.ui?.layout?.verticalReserved ?? 260;
+      const hPadding = uiConfig.ui?.layout?.horizontalPadding ?? 32;
+      const maxCap = uiConfig.ui?.layout?.boardMax ?? 500;
+      const minCap = uiConfig.ui?.layout?.boardMin ?? 280;
+      const compactThreshold = uiConfig.ui?.layout?.smallScreenHeightThreshold ?? 667;
+
+      const maxBoardHeight = h - vReserved;
+      const maxBoardWidth = w - hPadding;
+
       let size = Math.min(maxBoardHeight, maxBoardWidth);
-      
-      // 限制最大尺寸，避免在大屏上过大
-      size = Math.min(size, 500);
-      
-      // 限制最小尺寸，避免不可玩 (虽然正常手机不会小于 280)
-      size = Math.max(size, 280);
-      
+      size = Math.min(size, maxCap);
+      size = Math.max(size, minCap);
+
       setBoardSize(size);
-      setIsCompact(h < 667); // iPhone SE 等小屏判定
+      setIsCompact(h < compactThreshold);
     };
 
     calculateLayout();
@@ -701,7 +701,10 @@ const App = () => {
         @keyframes pulse-gold { 0% { transform: scale(1); opacity: 0; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
         @keyframes shake-vertical { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-3px); } 75% { transform: translateY(3px); } }
         @keyframes praise-pop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); } 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -100%) scale(1.2); } }
-        
+        @keyframes title-in { 0% { opacity: 0; transform: translateY(12px) scale(0.98); } 60% { opacity: 1; transform: translateY(0) scale(1.03); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes button-in { 0% { opacity: 0; transform: translateY(20px) scale(0.9); } 50% { opacity: 1; transform: translateY(0) scale(1.05); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes screen-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }
+
         .animate-pop { animation: pop-out 0.4s ease-out forwards; }
         .animate-fly { animation: juicy-fly 1s ease-in-out forwards; }
         .animate-praise { animation: praise-pop var(--duration, 1s) ease-out forwards; }
@@ -717,6 +720,10 @@ const App = () => {
         .flame-gold { text-shadow: 0 0 10px #ffaa00, 0 0 20px #ffff00; }
         .gold-metal-text { background: linear-gradient(to bottom, #fbf5b7 0%, #bf953f 30%, #b38728 50%, #fbf5b7 80%, #aa771c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
       `}</style>
+
+      {!hasStarted && (
+        <StartScreen onStart={() => setHasStarted(true)} config={uiConfig} />
+      )}
 
       {/* 顶部留白 - 适配异形屏 */}
       <div className="w-full h-12 shrink-0" />

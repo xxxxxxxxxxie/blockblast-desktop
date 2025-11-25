@@ -1,0 +1,31 @@
+{
+  "ui": {
+    "startScreen": {
+      "titleText": "Combo Blast"
+    },
+    "layout": {
+      "verticalReserved": 260,
+      "horizontalPadding": 32,
+      "boardMin": 280,
+      "boardMax": 500,
+      "smallScreenHeightThreshold": 667
+    }
+  },
+  "animations": {
+    "titleInMs": 600,
+    "buttonInMs": 500,
+    "screenFadeOutMs": 300
+  },
+  "descriptions": {
+    "ui.startScreen.titleText": "首页标题文本。字符串，建议不超过20字符。",
+    "ui.layout.verticalReserved": "顶部与底部预留高度，像素，范围200-360。",
+    "ui.layout.horizontalPadding": "左右总留白，像素，范围0-64。",
+    "ui.layout.boardMin": "棋盘最小边长，像素，范围240-320。",
+    "ui.layout.boardMax": "棋盘最大边长，像素，范围420-640。",
+    "ui.layout.smallScreenHeightThreshold": "判定小屏高度阈值，像素，常用为667。",
+    "animations.titleInMs": "标题入场动画时长，毫秒，范围300-1200。",
+    "animations.buttonInMs": "按钮入场动画时长，毫秒，范围300-1200。",
+    "animations.screenFadeOutMs": "开始界面淡出时长，毫秒，范围200-800。"
+  }
+}
+
