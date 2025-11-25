@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Trophy, RotateCcw, Crown, Flame, Sparkles, Loader2 } from 'lucide-react';
 import StartScreen from './components/StartScreen.jsx';
+import ThemeSwitcher from './components/ThemeSwitcher.jsx';
 import { useUIConfig } from './lib/uiConfig.js';
 
 // --- API 配置 ---
@@ -691,7 +692,7 @@ const App = () => {
   const comboStyle = getComboStyle(combo);
 
   return (
-    <div className="fixed inset-0 w-full h-full bg-slate-950 text-white flex flex-col items-center justify-between font-sans overflow-hidden select-none touch-none relative">
+    <div className="fixed inset-0 w-full h-full text-white flex flex-col items-center justify-between font-sans overflow-hidden select-none touch-none relative" style={{ background: 'var(--bg-main)' }}>
       
       <style>{`
         html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #020617; overflow: hidden; overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; }
@@ -735,9 +736,12 @@ const App = () => {
           <div className="w-full max-w-[500px] px-6 grid grid-cols-3 items-end mb-2 shrink-0">
             
             <div className="flex flex-col gap-3 justify-self-start">
-              <button onClick={() => setShowRestartModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5">
-                <RotateCcw size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowRestartModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5">
+                  <RotateCcw size={18} />
+                </button>
+                <ThemeSwitcher />
+              </div>
               <div className="text-xs font-black flex items-center gap-1.5">
                 <Crown size={14} className="text-yellow-500" fill="currentColor" /> 
                 <span className="best-gold-text text-sm">BEST {bestScore}</span>
@@ -781,7 +785,7 @@ const App = () => {
             className="flex justify-center items-center shrink-0 transition-all duration-300"
             style={{ width: boardSize, height: boardSize }}
           >
-             <div className="relative w-full h-full p-1 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 relative">
+             <div className="relative w-full h-full p-1 rounded-2xl shadow-2xl border relative" style={{ background: 'var(--board-bg)', borderColor: 'var(--board-border)' }}>
                 {/* 称赞语弹出层 */}
                 {praise && (
                     <div 
@@ -825,7 +829,7 @@ const App = () => {
       {/* 底部弹性触控区 - 填满下方剩余空间 */}
       <div 
         ref={bottomAreaRef}
-        className="w-full max-w-[500px] flex-1 min-h-[100px] px-2 flex justify-between items-start pt-2 z-20 gap-0 cursor-grab active:cursor-grabbing touch-none shrink-0 bg-gradient-to-t from-slate-950/50 to-transparent"
+        className="w-full max-w-[500px] flex-1 min-h-[100px] px-2 flex justify-between items-start pt-2 z-20 gap-0 cursor-grab active:cursor-grabbing touch-none shrink-0"
         onMouseDown={handleBottomAreaStart}
         onTouchStart={handleBottomAreaStart}
       >
