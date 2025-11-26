@@ -13,6 +13,26 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+  --bg-main: rgba(2,6,23,1);
+  --board-bg: rgba(11,18,32,1);
+  --board-border: rgba(51,65,85,1);
+  --cell-bg: rgba(31,41,55,1);
+  --text-primary: rgba(255,255,255,0.92);
+  --text-muted: rgba(148,163,184,1);
+  --accent: rgba(250,204,21,1);
+  --button-bg: rgba(255,255,255,0.06);
+  --button-border: rgba(255,255,255,0.08);
+}
+
+html, body, #root {
+  transition: background-color 300ms ease, color 300ms ease;
+}
+
+* {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
 a {
   font-weight: 500;
   color: #646cff;
