@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Trophy, RotateCcw, Crown, Flame, Sparkles, Loader2, Settings, Volume2, VolumeX, Vibrate, Languages, X, Heart, HeartCrack } from 'lucide-react';
+import { RefreshCw, Trophy, RotateCcw, Crown, Flame, Sparkles, Loader2, Settings, Volume2, VolumeX, Vibrate, Languages, X, Heart, HeartCrack, ShoppingBag, Coins, Medal, Target, Zap, Award } from 'lucide-react';
 
 import { getRandomShape, getBlockClass, GRID_SIZE } from './utils/shapeGenerator';
 import { UI_CONFIG } from './utils/uiConfig';
@@ -51,6 +51,24 @@ const PRAISE_DURATIONS = [800, 1000, 1200, 1500, 1800, 2000, 2200, 2500, 2800, 3
 
 const EFFECT_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899',
+];
+
+const ACHIEVEMENTS = [
+  { id: 'combo-3', title: { en: "Combo Starter", zh: "连击入门" }, desc: { en: "Reach 3x Combo", zh: "达到 3 次连击" }, icon: Zap, color: "text-blue-400", reward: 50 },
+  { id: 'combo-5', title: { en: "Combo King", zh: "连击之王" }, desc: { en: "Reach 5x Combo", zh: "达到 5 次连击" }, icon: Flame, color: "text-orange-500", reward: 150 },
+  { id: 'single-200', title: { en: "Block Smasher", zh: "方块粉碎者" }, desc: { en: "Score over 200 in a single move", zh: "单次移动得分超过 200" }, icon: Target, color: "text-red-400", reward: 100 },
+  { id: 'single-500', title: { en: "Demolition Expert", zh: "拆解专家" }, desc: { en: "Score over 500 in a single move", zh: "单次移动得分超过 500" }, icon: Award, color: "text-purple-500", reward: 300 },
+  { id: 'score-1000', title: { en: "Thousand Club", zh: "千分俱乐部" }, desc: { en: "Reach 1000 total score", zh: "总分达到 1000" }, icon: Trophy, color: "text-yellow-400", reward: 200 },
+  { id: 'score-5000', title: { en: "High Roller", zh: "高分玩家" }, desc: { en: "Reach 5000 total score", zh: "总分达到 5000" }, icon: Crown, color: "text-yellow-500", reward: 1000 },
+  { id: 'score-10000', title: { en: "Block Master", zh: "方块宗师" }, desc: { en: "Reach 10000 total score", zh: "总分达到 10000" }, icon: Medal, color: "text-cyan-400", reward: 2500 },
+  { id: 'survivor', title: { en: "Survivor", zh: "幸存者" }, desc: { en: "Use a revive for the first time", zh: "第一次使用复活" }, icon: Heart, color: "text-pink-500", reward: 100 },
+  { id: 'clear-triple', title: { en: "Triple Threat", zh: "三连暴击" }, desc: { en: "Clear 3 lines at once", zh: "一次性消除 3 行/列" }, icon: Sparkles, color: "text-green-400", reward: 150 },
+  { id: 'clear-quad', title: { en: "Quad Hunter", zh: "四线大师" }, desc: { en: "Clear 4 lines at once", zh: "一次性消除 4 行/列" }, icon: Crown, color: "text-yellow-600", reward: 400 },
+];
+
+const SHOP_ITEMS = [
+  { id: 'refresh', name: { en: "Refresh Shapes", zh: "刷新手牌" }, desc: { en: "Refresh your available shapes", zh: "重置当前待置放的方块" }, price: 200, icon: RotateCcw },
+  { id: 'clear-one', name: { en: "Cell Clear", zh: "单格清除" }, desc: { en: "Clear a single cell on the grid", zh: "清除棋盘上的任意一格" }, price: 500, icon: X },
 ];
 
 // --- 辅助函数 ---
@@ -128,6 +146,20 @@ const TEXTS = {
     on: "ON",
     off: "OFF",
     noSpace: "No Space!",
+    shop: "Shop",
+    coins: "Coins",
+    buy: "Buy",
+    equip: "Equip",
+    equipped: "Equipped",
+    themes: "Themes",
+    effects: "Effects",
+    earned: "Earned",
+    achievements: "Achievements",
+    maxCombo: "Max Combo",
+    maxSingle: "Best Move",
+    items: "道具",
+    claim: "领取",
+    claimed: "已领取",
   },
   zh: {
     score: "得分",
@@ -147,6 +179,20 @@ const TEXTS = {
     on: "开",
     off: "关",
     noSpace: "没位置了!",
+    shop: "商店",
+    coins: "金币",
+    buy: "购买",
+    equip: "使用",
+    equipped: "已使用",
+    themes: "主题",
+    effects: "特效",
+    earned: "获得",
+    achievements: "成就",
+    maxCombo: "最高连击",
+    maxSingle: "最高单位得分",
+    items: "Items",
+    claim: "Claim",
+    claimed: "Claimed",
   }
 };
 
@@ -174,12 +220,30 @@ const App = () => {
   const clearedInRound = useRef(false);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
+  const [activeShopTab, setActiveShopTab] = useState('themes');
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [achievementNotifications, setAchievementNotifications] = useState([]);
+  const [earnedCoins, setEarnedCoins] = useState(0);
 
   // --- 设置状态 ---
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('blockBlastSettings');
-    // 默认语言改为中文 'zh'
-    return saved ? { ...JSON.parse(saved), theme: JSON.parse(saved).theme || 'classic' } : { sound: true, vibration: true, language: 'zh', theme: 'classic' };
+    const defaultSettings = {
+      sound: true,
+      vibration: true,
+      language: 'zh',
+      theme: 'classic',
+      currency: 0,
+      unlockedThemes: ['classic'],
+      unlockedEffects: ['classic'],
+      activeEffect: 'classic',
+      maxCombo: 0,
+      maxSingleScore: 0,
+      unlockedAchievements: [],
+      claimedAchievements: []
+    };
+    return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
   });
 
   useEffect(() => {
@@ -293,8 +357,42 @@ const App = () => {
   }, [score, bestScore, initialBestScore, hasBrokenRecord]);
 
   useEffect(() => {
-    if (combo > maxCombo) setMaxCombo(combo);
+    if (combo > settings.maxCombo) {
+      setSettings(prev => ({ ...prev, maxCombo: combo }));
+    }
+    if (combo >= 3) unlockAchievement('combo-3');
+    if (combo >= 5) unlockAchievement('combo-5');
   }, [combo]);
+
+  const unlockAchievement = (id) => {
+    if (settings.unlockedAchievements.includes(id)) return;
+
+    setSettings(prev => ({
+      ...prev,
+      unlockedAchievements: [...prev.unlockedAchievements, id]
+    }));
+
+    const achievement = ACHIEVEMENTS.find(a => a.id === id);
+    if (achievement) {
+      const notificationId = Date.now();
+      setAchievementNotifications(prev => [...prev, { ...achievement, id: notificationId }]);
+      setTimeout(() => {
+        setAchievementNotifications(prev => prev.filter(n => n.id !== notificationId));
+      }, 5000);
+    }
+  };
+
+  const claimReward = (id) => {
+    if (settings.claimedAchievements.includes(id)) return;
+    const ach = ACHIEVEMENTS.find(a => a.id === id);
+    if (!ach || !settings.unlockedAchievements.includes(id)) return;
+
+    setSettings(prev => ({
+      ...prev,
+      currency: prev.currency + ach.reward,
+      claimedAchievements: [...prev.claimedAchievements, id]
+    }));
+  };
 
   useEffect(() => {
     if (displayScore === score) return;
@@ -324,6 +422,17 @@ const App = () => {
           setShowNoSpace(true);
           setTimeout(() => {
             setShowNoSpace(false);
+            const coins = Math.floor(score / 10);
+            setEarnedCoins(coins);
+            if (coins > 0) {
+              setSettings(prev => ({ ...prev, currency: prev.currency + coins }));
+            }
+
+            // Check settlement achievements
+            if (score >= 1000) unlockAchievement('score-1000');
+            if (score >= 5000) unlockAchievement('score-5000');
+            if (score >= 10000) unlockAchievement('score-10000');
+
             setGameOver(true);
           }, 1500);
         }
@@ -375,6 +484,7 @@ const App = () => {
 
     // 刷新手牌
     refillShapes();
+    unlockAchievement('survivor');
   };
 
   const refillShapes = () => {
@@ -550,6 +660,14 @@ const App = () => {
       else triggerScreenShake('medium'); // Clearing lines always gives at least medium shake
 
       setScore(prev => prev + pointsGained);
+      if (pointsGained > settings.maxSingleScore) {
+        setSettings(prev => ({ ...prev, maxSingleScore: pointsGained }));
+      }
+
+      if (pointsGained >= 200) unlockAchievement('single-200');
+      if (pointsGained >= 500) unlockAchievement('single-500');
+      if (rowsToClear.size + colsToClear.size >= 4) unlockAchievement('clear-quad');
+      else if (rowsToClear.size + colsToClear.size >= 3) unlockAchievement('clear-triple');
 
       const clearedGrid = newGrid.map(row => [...row]);
       rowsToClear.forEach(r => { for (let c = 0; c < GRID_SIZE; c++) clearedGrid[r][c] = null; });
@@ -881,6 +999,17 @@ const App = () => {
         .animate-shake-light { animation: shake-light 0.2s ease-out; }
         .animate-shake-medium { animation: shake-medium 0.3s ease-out; }
         .animate-shake-heavy { animation: shake-heavy 0.4s ease-out; }
+
+        @keyframes slide-in-top {
+          0% { transform: translateY(-100%); opacity: 0; }
+          100% { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-in-top { animation: slide-in-top 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
       `}</style>
 
       {/* 顶部留白 - 适配异形屏 */}
@@ -899,6 +1028,13 @@ const App = () => {
               </button>
               <button onClick={() => setShowSettingsModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5">
                 <Settings size={18} />
+              </button>
+              <button onClick={() => setShowShopModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5 flex items-center gap-1.5">
+                <ShoppingBag size={18} className="text-yellow-400" />
+                <span className="text-xs font-bold text-yellow-500">{settings.currency}</span>
+              </button>
+              <button onClick={() => setShowAchievementModal(true)} className="p-3 rounded-full bg-white/5 hover:bg-white/10 backdrop-blur-sm transition text-white/80 w-fit border border-white/5">
+                <Trophy size={18} className="text-yellow-500" />
               </button>
             </div>
             <div className="text-xs font-black flex items-center gap-1.5">
@@ -992,6 +1128,12 @@ const App = () => {
                   <div className={UI_CONFIG.gameOver.title}>{t.gameOver}</div>
                   <div className={UI_CONFIG.gameOver.scoreLabel}>{t.score}</div>
                   <div className={UI_CONFIG.gameOver.finalScore}>{score}</div>
+                  {earnedCoins > 0 && (
+                    <div className="flex items-center gap-2 mb-6 bg-yellow-500/20 px-4 py-2 rounded-full border border-yellow-500/30 animate-bounce">
+                      <Coins className="text-yellow-400" size={20} />
+                      <span className="text-yellow-300 font-bold">+{earnedCoins} {t.coins}</span>
+                    </div>
+                  )}
                   <button onClick={startNewGame} className={UI_CONFIG.gameOver.restartButton}>
                     <RefreshCw size={24} /> {t.tryAgain}
                   </button>
@@ -1111,30 +1253,254 @@ const App = () => {
                 </button>
               </div>
 
-              {/* Theme Selector */}
-              <div className="flex flex-col gap-3 bg-white/5 p-4 rounded-xl">
-                <div className="flex items-center gap-3 text-slate-200">
-                  <Sparkles size={20} className="text-yellow-400" />
-                  <span className="font-medium">Theme</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  {Object.entries(THEMES).map(([key, theme]) => (
-                    <button
-                      key={key}
-                      onClick={() => setSettings(s => ({ ...s, theme: key }))}
-                      className={`flex-1 aspect-square rounded-xl border-2 transition-all duration-200 flex items-center justify-center relative overflow-hidden ${theme.color} ${settings.theme === key ? 'border-blue-500 scale-110 shadow-lg shadow-blue-500/20' : 'border-transparent opacity-70 hover:opacity-100 hover:scale-105'}`}
-                      title={theme.name}
-                    >
-                      {settings.theme === key && <div className="absolute inset-0 border-2 border-white/20 rounded-xl" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
-
           </div>
         </div>
       )}
+
+      {showShopModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl relative max-h-[85vh] flex flex-col pt-14">
+            <button onClick={() => setShowShopModal(false)} className="absolute right-4 top-4 text-slate-400 hover:text-white z-10">
+              <X size={20} />
+            </button>
+            <div className="absolute left-6 top-4 flex items-center gap-2">
+              <ShoppingBag size={24} className="text-yellow-400" />
+              <h3 className="text-2xl font-bold text-white line-height-1">{t.shop}</h3>
+            </div>
+
+            <div className="flex items-center gap-2 mb-4 bg-white/5 w-fit px-3 py-1 rounded-full border border-white/10 ml-auto">
+              <Coins size={16} className="text-yellow-400" />
+              <span className="text-yellow-500 font-bold">{settings.currency}</span>
+            </div>
+
+            {/* Shop Tabs */}
+            <div className="flex gap-1 mb-6 bg-black/20 p-1 rounded-xl border border-white/5">
+              {[
+                { id: 'themes', label: t.themes, icon: Sparkles },
+                { id: 'effects', label: t.effects, icon: Flame },
+                { id: 'items', label: t.items, icon: RotateCcw }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveShopTab(tab.id)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${activeShopTab === tab.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+                >
+                  <tab.icon size={16} />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {activeShopTab === 'themes' && (
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(THEMES).map(([key, theme]) => {
+                    const isUnlocked = settings.unlockedThemes.includes(key);
+                    const isActive = settings.theme === key;
+                    const price = 500;
+                    return (
+                      <div key={key} className={`p-3 rounded-xl border-2 transition-all ${isActive ? 'bg-blue-500/10 border-blue-500' : 'bg-white/5 border-transparent'}`}>
+                        <div className={`aspect-video rounded-lg mb-3 ${theme.bg} border border-white/10 relative overflow-hidden`}>
+                          <div className={`absolute inset-4 rounded shadow-lg ${theme.board}`} />
+                        </div>
+                        <span className="block font-bold text-sm text-white mb-2">{theme.name}</span>
+                        {isUnlocked ? (
+                          <button
+                            onClick={() => setSettings(s => ({ ...s, theme: key }))}
+                            disabled={isActive}
+                            className={`w-full py-2 rounded-lg text-xs font-bold transition ${isActive ? 'bg-green-500 text-white cursor-default' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                          >
+                            {isActive ? t.equipped : t.equip}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (settings.currency >= price) {
+                                setSettings(s => ({
+                                  ...s,
+                                  currency: s.currency - price,
+                                  unlockedThemes: [...s.unlockedThemes, key]
+                                }));
+                              }
+                            }}
+                            disabled={settings.currency < price}
+                            className={`w-full py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition ${settings.currency >= price ? 'bg-yellow-500 text-slate-950 hover:bg-yellow-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                          >
+                            <Coins size={12} /> {price} {t.buy}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {activeShopTab === 'effects' && (
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { id: 'classic', name: 'Classic', color: 'bg-blue-500' },
+                    { id: 'rainbow', name: 'Rainbow Blast', color: 'bg-gradient-to-r from-red-500 via-green-500 to-blue-500', price: 1000 },
+                  ].map((effect) => {
+                    const isUnlocked = settings.unlockedEffects.includes(effect.id);
+                    const isActive = settings.activeEffect === effect.id;
+                    const price = effect.price || 0;
+                    return (
+                      <div key={effect.id} className={`p-3 rounded-xl border-2 transition-all ${isActive ? 'bg-blue-500/10 border-blue-500' : 'bg-white/5 border-transparent'}`}>
+                        <div className={`aspect-video rounded-lg mb-3 ${effect.color} opacity-40 animate-pulse`} />
+                        <span className="block font-bold text-sm text-white mb-2">{effect.name}</span>
+                        {isUnlocked ? (
+                          <button
+                            onClick={() => setSettings(s => ({ ...s, activeEffect: effect.id }))}
+                            disabled={isActive}
+                            className={`w-full py-2 rounded-lg text-xs font-bold transition ${isActive ? 'bg-green-500 text-white cursor-default' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                          >
+                            {isActive ? t.equipped : t.equip}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (settings.currency >= price) {
+                                setSettings(s => ({
+                                  ...s,
+                                  currency: s.currency - price,
+                                  unlockedEffects: [...s.unlockedEffects, effect.id]
+                                }));
+                              }
+                            }}
+                            disabled={settings.currency < price}
+                            className={`w-full py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition ${settings.currency >= price ? 'bg-yellow-500 text-slate-950 hover:bg-yellow-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                          >
+                            <Coins size={12} /> {price} {t.buy}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {activeShopTab === 'items' && (
+                <div className="space-y-3">
+                  {SHOP_ITEMS.map((item) => (
+                    <div key={item.id} className="p-4 bg-white/5 rounded-xl border border-white/5 flex items-center gap-4">
+                      <div className="p-3 bg-blue-500/20 rounded-lg text-blue-400">
+                        <item.icon size={24} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-white">{settings.language === 'en' ? item.name.en : item.name.zh}</h4>
+                        <p className="text-xs text-slate-400">{settings.language === 'en' ? item.desc.en : item.desc.zh}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (settings.currency >= item.price) {
+                            setSettings(s => ({ ...s, currency: s.currency - item.price }));
+                            // In a real app, logic would trigger here
+                            if (item.id === 'refresh') refillShapes();
+                          }
+                        }}
+                        disabled={settings.currency < item.price}
+                        className={`px-4 py-2 rounded-lg text-xs font-black transition ${settings.currency >= item.price ? 'bg-yellow-500 text-slate-950 hover:bg-yellow-400' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                      >
+                        <div className="flex flex-col items-center">
+                          <span className="flex items-center gap-1"><Coins size={12} /> {item.price}</span>
+                          <span className="text-[9px] opacity-80 uppercase">{t.buy}</span>
+                        </div>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAchievementModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl relative flex flex-col max-h-[85vh]">
+            <button onClick={() => setShowAchievementModal(false)} className="absolute right-4 top-4 text-slate-400 hover:text-white z-10">
+              <X size={20} />
+            </button>
+
+            <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+              <Trophy size={24} className="text-yellow-400" /> {t.achievements}
+            </h3>
+
+            {/* Stats Header */}
+            <div className="grid grid-cols-3 gap-2 mb-8">
+              <div className="flex flex-col items-center bg-white/5 p-3 rounded-xl border border-white/5">
+                <span className="text-[10px] text-slate-400 uppercase font-black mb-1">{t.best}</span>
+                <span className="gold-metal-text font-black text-xl">{bestScore}</span>
+              </div>
+              <div className="flex flex-col items-center bg-white/5 p-3 rounded-xl border border-white/5">
+                <span className="text-[10px] text-slate-400 uppercase font-black mb-1">{t.maxCombo}</span>
+                <span className="gold-metal-text font-black text-xl">x{settings.maxCombo}</span>
+              </div>
+              <div className="flex flex-col items-center bg-white/5 p-3 rounded-xl border border-white/5">
+                <span className="text-[10px] text-slate-400 uppercase font-black mb-1 leading-none text-center">{t.maxSingle}</span>
+                <span className="gold-metal-text font-black text-xl">{settings.maxSingleScore}</span>
+              </div>
+            </div>
+
+            {/* Achievement Grid (Scrollable) */}
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+              {ACHIEVEMENTS.map((ach) => {
+                const isUnlocked = settings.unlockedAchievements.includes(ach.id);
+                const isClaimed = settings.claimedAchievements.includes(ach.id);
+                const Icon = ach.icon;
+
+                return (
+                  <div key={ach.id} className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-300 ${isUnlocked ? 'bg-white/5 border-white/10' : 'bg-black/20 border-white/5 opacity-50 grayscale'}`}>
+                    <div className={`p-3 rounded-full ${isUnlocked ? 'bg-yellow-500/20 ' + ach.color : 'bg-slate-800 text-slate-600'}`}>
+                      <Icon size={24} />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`font-bold ${isUnlocked ? 'text-white' : 'text-slate-500'}`}>{settings.language === 'en' ? ach.title.en : ach.title.zh}</h4>
+                      <p className={`text-xs ${isUnlocked ? 'text-slate-400' : 'text-slate-600'}`}>{settings.language === 'en' ? ach.desc.en : ach.desc.zh}</p>
+                    </div>
+                    {isUnlocked ? (
+                      isClaimed ? (
+                        <div className="flex flex-col items-center gap-1 opacity-50">
+                          <Award size={18} className="text-yellow-500" />
+                          <span className="text-[10px] font-bold text-yellow-600">{t.claimed}</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => claimReward(ach.id)}
+                          className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 rounded-lg text-xs font-black shadow-lg shadow-yellow-500/20 transition-all hover:scale-105 active:scale-95 flex flex-col items-center"
+                        >
+                          <span>{t.claim}</span>
+                          <span className="text-[10px] opacity-80 flex items-center gap-1"><Coins size={10} /> +{ach.reward}</span>
+                        </button>
+                      )
+                    ) : (
+                      <div className="p-2">
+                        <X size={18} className="text-slate-700" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Achievement Toast Notifications */}
+      <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none w-full items-center">
+        {achievementNotifications.map((notif) => (
+          <div key={notif.id} className="bg-slate-900/90 backdrop-blur-md border border-yellow-500/50 rounded-2xl p-4 shadow-2xl flex items-center gap-4 animate-slide-in-top max-w-sm pointer-events-auto border-b-4 border-b-yellow-500">
+            <div className={`p-2 rounded-full bg-yellow-500/20 ${notif.color}`}>
+              <notif.icon size={20} />
+            </div>
+            <div>
+              <h5 className="text-[10px] text-yellow-500 font-black uppercase tracking-widest">{t.achievements} Unlock!</h5>
+              <h4 className="text-sm font-bold text-white">{settings.language === 'en' ? notif.title.en : notif.title.zh}</h4>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <div className="absolute bottom-2 text-slate-500/20 text-[10px] select-none pointer-events-none">
         Block Blast • React
